@@ -2,7 +2,7 @@ import { GameConstants, TeamSize } from "@common/constants";
 import { Badges } from "@common/definitions/badges";
 import { Mode } from "@common/definitions/modes";
 import { Skins } from "@common/definitions/skins";
-import { type GetGameResponse } from "@common/typings";
+import { CustomTeamMessage, type GetGameResponse } from "@common/typings";
 import { ColorStyles, Logger, styleText } from "@common/utils/logging";
 import { Numeric } from "@common/utils/math";
 import { Cron } from "croner";
@@ -75,6 +75,10 @@ export function serverWarn(...message: unknown[]): void {
     Logger.warn(styleText("[Server] [WARNING]", ColorStyles.foreground.yellow.normal), ...message);
 }
 
+export function serverError(...message: unknown[]): void {
+    Logger.warn(styleText("[Server] [ERROR]", ColorStyles.foreground.red.normal), ...message);
+}
+
 let teamsCreated: Record<string, number> = {};
 
 export const customTeams: Map<string, CustomTeam> = new Map<string, CustomTeam>();
@@ -100,8 +104,11 @@ let mapSwitchCron: Cron | undefined;
 let mode: Mode;
 let nextMode: Mode;
 
-if (isMainThread) {
-    // Initialize the server
+if (isMainThread && require.main === module) {
+    //              ^^^^^^^^^^^^^^^^^^^^^^^ only starts server if called directly from command line (not imported)
+
+    process.on("uncaughtException", e => serverError("An unhandled error occurred. Details:", e));
+
     createServer().get("/api/serverInfo", async res => {
         cors(res);
         res
@@ -260,14 +267,15 @@ if (isMainThread) {
             }
 
             // Validate skin
-            const rolesRequired = Skins.fromStringSafe(skin)?.rolesRequired;
-            if (rolesRequired && !rolesRequired.includes(role)) {
+            const skinDefinition = Skins.fromStringSafe(skin);
+            const rolesRequired = skinDefinition?.rolesRequired;
+            if (!skinDefinition || (rolesRequired && !rolesRequired.includes(role))) {
                 skin = GameConstants.player.defaultSkin;
             }
 
             // Validate badge
-            const roles = badge ? Badges.fromStringSafe(badge)?.roles : undefined;
-            if (roles?.length && !roles.includes(role)) {
+            const badgeDefinition = badge ? Badges.fromStringSafe(badge) : undefined;
+            if (!badgeDefinition || (badgeDefinition.roles && !badgeDefinition.roles.includes(role))) {
                 badge = undefined;
             }
 
@@ -305,10 +313,11 @@ if (isMainThread) {
          */
         message(socket: WebSocket<CustomTeamPlayerContainer>, message: ArrayBuffer) {
             const player = socket.getUserData().player;
-            // we pray
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            void player.team.onMessage(player, JSON.parse(textDecoder.decode(message)));
+            try {
+                void player.team.onMessage(player, JSON.parse(textDecoder.decode(message)) as CustomTeamMessage);
+            } catch (e) {
+                serverError("Error parsing team socket message. Details:", e);
+            }
         },
 
         /**

@@ -22,7 +22,6 @@ export enum WorkerMessages {
     UpdateGameData,
     UpdateMaxTeamSize,
     UpdateMap,
-    CreateNewGame,
     Reset
 }
 
@@ -44,9 +43,7 @@ export type WorkerMessage =
         readonly map: MapWithParams
     }
     | {
-        readonly type:
-            | WorkerMessages.CreateNewGame
-            | WorkerMessages.Reset
+        readonly type: WorkerMessages.Reset
     };
 
 export interface GameData {
@@ -99,10 +96,6 @@ export class GameContainer {
                         creatingID = -1;
                         this.resolve(this.id);
                     }
-                    break;
-                }
-                case WorkerMessages.CreateNewGame: {
-                    void newGame();
                     break;
                 }
                 case WorkerMessages.IPAllowed: {
@@ -204,13 +197,13 @@ export async function newGame(id?: number): Promise<number> {
 export const games: Array<GameContainer | undefined> = [];
 
 if (!isMainThread) {
-    process.on("uncaughtException", e => game.error("An unhandled error occurred. Details:", e));
-
     const id = (workerData as WorkerInitData).id;
     let maxTeamSize = (workerData as WorkerInitData).maxTeamSize;
     let map = (workerData as WorkerInitData).map;
 
     let game = new Game(id, maxTeamSize, map);
+
+    process.on("uncaughtException", e => game.error("An unhandled error occurred. Details:", e));
 
     // string = ip, number = expire time
     const allowedIPs = new Map<string, number>();
@@ -230,9 +223,9 @@ if (!isMainThread) {
             }
             case WorkerMessages.UpdateMap:
                 map = message.map;
+                game.kill();
             // eslint-disable-next-line no-fallthrough
             case WorkerMessages.Reset: {
-                game.kill();
                 game = new Game(id, maxTeamSize, map);
                 break;
             }

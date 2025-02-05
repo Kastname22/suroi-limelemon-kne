@@ -19,7 +19,7 @@ import { PickupPacket } from "@common/packets/pickupPacket";
 import { ReportPacket } from "@common/packets/reportPacket";
 import { UpdatePacket, type UpdatePacketDataOut } from "@common/packets/updatePacket";
 import { CircleHitbox } from "@common/utils/hitbox";
-import { adjacentOrEqualLayer } from "@common/utils/layer";
+import { adjacentOrEqualLayer, equalLayer } from "@common/utils/layer";
 import { EaseFunctions, Geometry } from "@common/utils/math";
 import { Timeout } from "@common/utils/misc";
 import { ItemType, ObstacleSpecialRoles } from "@common/utils/objectDefinitions";
@@ -28,6 +28,7 @@ import { type ObjectsNetData } from "@common/utils/objectsSerializations";
 import { randomFloat, randomVector } from "@common/utils/random";
 import { Vec, type Vector } from "@common/utils/vector";
 import { sound, type Sound } from "@pixi/sound";
+import FontFaceObserver from "fontfaceobserver";
 import $ from "jquery";
 import { Application, Color, Container } from "pixi.js";
 import "pixi.js/prepare";
@@ -58,6 +59,7 @@ import { setUpCommands } from "./utils/console/commands";
 import { defaultClientCVars } from "./utils/console/defaultClientCVars";
 import { GameConsole } from "./utils/console/gameConsole";
 import { EMOTE_SLOTS, LAYER_TRANSITION_DELAY, PIXI_SCALE, UI_DEBUG_MODE } from "./utils/constants";
+import { DebugRenderer } from "./utils/debugRenderer";
 import { setUpNetGraph } from "./utils/graph/netGraph";
 import { loadTextures, SuroiSprite } from "./utils/pixi";
 import { Tween } from "./utils/tween";
@@ -94,6 +96,8 @@ type ObjectMapping = {
     readonly [Cat in keyof ObjectClassMapping]: InstanceType<ObjectClassMapping[Cat]>
 };
 
+type Colors = Record<ColorKeys | "ghillie", Color>;
+
 export class Game {
     private _socket?: WebSocket;
 
@@ -121,7 +125,7 @@ export class Game {
 
     _modeName: Mode | undefined;
     get modeName(): Mode {
-        if (!this._modeName) throw new Error("modeName accessed before initialization");
+        if (this._modeName === undefined) throw new Error("modeName accessed before initialization");
         return this._modeName;
     }
 
@@ -135,10 +139,10 @@ export class Game {
                 result[key] = new Color(color);
                 return result;
             },
-            {} as Record<ColorKeys, Color>
+            {} as Colors
         );
 
-        this._ghillieTint = this._colors.grass.multiply(new Color("hsl(0, 0%, 99%)"));
+        this._colors.ghillie = new Color(this._colors.grass).multiply("hsl(0, 0%, 99%)");
     }
 
     _mode: ModeDefinition | undefined;
@@ -147,16 +151,10 @@ export class Game {
         return this._mode;
     }
 
-    private _colors: Record<ColorKeys, Color> | undefined;
-    get colors(): Record<ColorKeys, Color> {
+    private _colors: Colors | undefined;
+    get colors(): Colors {
         if (!this._colors) throw new Error("colors accessed before initialization");
         return this._colors;
-    }
-
-    private _ghillieTint: Color | undefined;
-    get ghillieTint(): Color {
-        if (!this._ghillieTint) throw new Error("ghillieTint accessed before initialization");
-        return this._ghillieTint;
     }
 
     /**
@@ -191,6 +189,9 @@ export class Game {
     readonly gas = new Gas(this);
 
     readonly netGraph = setUpNetGraph(this);
+    readonly debugRenderer = new DebugRenderer();
+
+    readonly fontObserver = new FontFaceObserver("Inter", { weight: 600 }).load();
 
     music!: Sound;
 
@@ -250,6 +251,7 @@ export class Game {
             });
 
             const pixi = game.pixi;
+            pixi.stop();
             void loadTextures(
                 game.modeName,
                 pixi.renderer,
@@ -282,6 +284,7 @@ export class Game {
 
             pixi.stage.addChild(
                 game.camera.container,
+                game.debugRenderer.graphics,
                 game.map.container,
                 game.map.mask,
                 ...Object.values(game.netGraph).map(g => g.container)
@@ -298,7 +301,7 @@ export class Game {
         let menuMusicSuffix: string;
         if (game.console.getBuiltInCVar("cv_use_old_menu_music")) {
             menuMusicSuffix = "_old";
-        } else if (game.mode.sounds?.replace?.includes("menu_music")) {
+        } else if (game.mode.sounds?.replaceMenuMusic) {
             menuMusicSuffix = `_${game.modeName}`;
         } else {
             menuMusicSuffix = "";
@@ -308,6 +311,7 @@ export class Game {
             singleInstance: true,
             preload: true,
             autoPlay: true,
+            loop: true,
             volume: game.console.getBuiltInCVar("cv_music_volume")
         });
 
@@ -337,6 +341,7 @@ export class Game {
         this._socket.binaryType = "arraybuffer";
 
         this._socket.onopen = (): void => {
+            this.pixi.start();
             this.music?.stop();
             this.connecting = false;
             this.gameStarted = true;
@@ -385,38 +390,36 @@ export class Game {
             if (particleEffects !== undefined) {
                 const This = this;
                 const gravityOn = particleEffects.gravity;
-                this.particleManager.addEmitter(
-                    {
-                        delay: particleEffects.delay,
-                        active: this.console.getBuiltInCVar("cv_ambient_particles"),
-                        spawnOptions: () => ({
-                            frames: particleEffects.frames,
-                            get position(): Vector {
-                                const width = This.camera.width / PIXI_SCALE;
-                                const height = This.camera.height / PIXI_SCALE;
-                                const player = This.activePlayer;
-                                if (!player) return Vec.create(0, 0);
-                                const { x, y } = player.position;
-                                return randomVector(x - width, x + width, y - height, y + height);
-                            },
-                            speed: randomVector(-10, 10, gravityOn ? 10 : -10, 10),
-                            lifetime: randomFloat(12000, 50000),
-                            zIndex: Number.MAX_SAFE_INTEGER - 5,
-                            alpha: {
-                                start: this.layer === Layer.Ground ? 0.7 : 0,
-                                end: 0
-                            },
-                            rotation: {
-                                start: randomFloat(0, 36),
-                                end: randomFloat(40, 80)
-                            },
-                            scale: {
-                                start: randomFloat(0.8, 1.1),
-                                end: randomFloat(0.7, 0.8)
-                            }
-                        })
-                    }
-                );
+                this.particleManager.addEmitter({
+                    delay: particleEffects.delay,
+                    active: this.console.getBuiltInCVar("cv_ambient_particles"),
+                    spawnOptions: () => ({
+                        frames: particleEffects.frames,
+                        get position(): Vector {
+                            const width = This.camera.width / PIXI_SCALE;
+                            const height = This.camera.height / PIXI_SCALE;
+                            const player = This.activePlayer;
+                            if (!player) return Vec.create(0, 0);
+                            const { x, y } = player.position;
+                            return randomVector(x - width, x + width, y - height, y + height);
+                        },
+                        speed: randomVector(-10, 10, gravityOn ? 10 : -10, 10),
+                        lifetime: randomFloat(12000, 50000),
+                        zIndex: Number.MAX_SAFE_INTEGER - 5,
+                        alpha: {
+                            start: this.layer === Layer.Ground ? 0.7 : 0,
+                            end: 0
+                        },
+                        rotation: {
+                            start: randomFloat(0, 36),
+                            end: randomFloat(40, 80)
+                        },
+                        scale: {
+                            start: randomFloat(0.8, 1.1),
+                            end: randomFloat(0.7, 0.8)
+                        }
+                    })
+                });
             }
         };
 
@@ -441,6 +444,7 @@ export class Game {
         const ui = this.uiManager.ui;
 
         this._socket.onerror = (): void => {
+            this.pixi.stop();
             this.error = true;
             this.connecting = false;
             ui.splashMsgText.html(getTranslatedString("msg_err_joining"));
@@ -449,6 +453,7 @@ export class Game {
         };
 
         this._socket.onclose = (): void => {
+            this.pixi.stop();
             this.connecting = false;
             resetPlayButtons(this);
 
@@ -593,7 +598,7 @@ export class Game {
         ui.killLeaderCount.text("0");
         ui.spectateKillLeader.addClass("btn-disabled");
 
-        ui.teamContainer.toggle(this.teamMode);
+        if (!UI_DEBUG_MODE) ui.teamContainer.toggle(this.teamMode);
     }
 
     async endGame(): Promise<void> {
@@ -607,9 +612,8 @@ export class Game {
             this.soundManager.stopAll();
 
             ui.splashUi.fadeIn(400, () => {
-                if (this.music) {
-                    void this.music.play();
-                }
+                this.pixi.stop();
+                void this.music?.play();
                 ui.teamContainer.html("");
                 ui.actionContainer.hide();
                 ui.gameOverOverlay.hide();
@@ -685,37 +689,21 @@ export class Game {
             }
         }
 
-        let players: Set<Player> | undefined;
-        if (this.console.getBuiltInCVar("cv_movement_smoothing")) {
-            for (const player of players = this.objects.getCategory(ObjectCategory.Player)) {
-                player.updateContainerPosition();
-                if (!player.isActivePlayer || !this.console.getBuiltInCVar("cv_responsive_rotation") || this.spectating) {
-                    player.updateContainerRotation();
-                }
-            }
+        const hasMovementSmoothing = this.console.getBuiltInCVar("cv_movement_smoothing");
 
-            if (this.activePlayer) {
-                this.camera.position = this.activePlayer.container.position;
-            }
+        const showHitboxes = this.console.getBuiltInCVar("db_show_hitboxes");
 
-            for (const loot of this.objects.getCategory(ObjectCategory.Loot)) {
-                loot.updateContainerPosition();
-            }
+        for (const object of this.objects) {
+            object.update();
+            if (hasMovementSmoothing) object.updateInterpolation();
 
-            for (const projectile of this.objects.getCategory(ObjectCategory.ThrowableProjectile)) {
-                projectile.updateContainerPosition();
-                projectile.updateContainerRotation();
-            }
-
-            for (const syncedParticle of this.objects.getCategory(ObjectCategory.SyncedParticle)) {
-                syncedParticle.updateContainerPosition();
-                syncedParticle.updateContainerRotation();
-                syncedParticle.updateContainerScale();
+            if (DEBUG_CLIENT) {
+                if (showHitboxes) object.updateDebugGraphics(this.debugRenderer);
             }
         }
 
-        for (const player of players ?? this.objects.getCategory(ObjectCategory.Player)) {
-            player.updateGrenadePreview();
+        if (hasMovementSmoothing && this.activePlayer) {
+            this.camera.position = this.activePlayer.container.position;
         }
 
         for (const [image, spinSpeed] of this.spinningImages.entries()) {
@@ -734,6 +722,9 @@ export class Game {
         for (const plane of this.planes) plane.update();
 
         this.camera.update();
+        this.debugRenderer.graphics.position = this.camera.container.position;
+        this.debugRenderer.graphics.scale = this.camera.container.scale;
+        this.debugRenderer.render();
     }
 
     private _lastUpdateTime = 0;
@@ -864,7 +855,11 @@ export class Game {
         }
 
         for (const emote of updateData.emotes ?? []) {
-            if (this.console.getBuiltInCVar("cv_hide_emotes")) break;
+            if (
+                this.console.getBuiltInCVar("cv_hide_emotes")
+                && !("itemType" in emote.definition) // Never hide team emotes (ammo & healing items)
+            ) break;
+
             const player = this.objects.get(emote.playerID);
             if (player?.isPlayer) {
                 player.showEmote(emote.definition);
@@ -1046,6 +1041,23 @@ export class Game {
                     }
                 } else if (isBuilding) {
                     object.toggleCeiling();
+                } else if (isObstacle && object.definition.detector && object.notOnCoolDown) {
+                    for (const player of this.objects.getCategory(ObjectCategory.Player)) {
+                        if (
+                            !object.hitbox.collidesWith(player.hitbox)
+                            || !equalLayer(object.layer, player.layer)
+                            || player.dead
+                        ) continue;
+
+                        this.soundManager.play("detection", {
+                            falloff: 0.25,
+                            position: Vec.create(object.position.x + 20, object.position.y - 20),
+                            maxRange: 200
+                        });
+
+                        object.notOnCoolDown = false;
+                        setTimeout(() => object.notOnCoolDown = true, 1000);
+                    }
                 }
             }
 
@@ -1161,7 +1173,7 @@ export class Game {
                         if (player.downed && (object?.isLoot || (object?.isObstacle && object.definition.noInteractMessage))) interactMsg.hide();
                     }
                 } else {
-                    interactMsg.hide();
+                   if (!UI_DEBUG_MODE) interactMsg.hide();
                 }
 
                 // Mobile stuff

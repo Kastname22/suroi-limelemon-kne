@@ -1,4 +1,4 @@
-import { DEFAULT_INVENTORY, GameConstants, KillfeedEventSeverity, KillfeedEventType, KillfeedMessageType } from "@common/constants";
+import { DEFAULT_INVENTORY, GameConstants, KillfeedEventSeverity, KillfeedEventType, KillfeedMessageType, ObjectCategory } from "@common/constants";
 import { Ammos } from "@common/definitions/ammos";
 import { type BadgeDefinition } from "@common/definitions/badges";
 import { type EmoteDefinition } from "@common/definitions/emotes";
@@ -382,9 +382,11 @@ export class UIManager {
     }
 
     cancelAction(): void {
-        this.ui.actionContainer
-            .hide()
-            .stop();
+        if (!UI_DEBUG_MODE) {
+            this.ui.actionContainer
+                .hide()
+                .stop();
+        }
         this.action.active = false;
     }
 
@@ -646,7 +648,15 @@ export class UIManager {
             this.game.seqsSent[pingSeq] = undefined;
         }
 
-        if (id !== undefined) this.game.activePlayerID = id.id;
+        if (id !== undefined) {
+            const oldID = this.game.activePlayerID;
+            this.game.activePlayerID = id.id;
+            if (oldID !== id.id) {
+                for (const player of this.game.objects.getCategory(ObjectCategory.Player)) {
+                    player.updateTeammateName();
+                }
+            }
+        }
 
         if (id) {
             const spectating = id.spectating;
@@ -869,7 +879,7 @@ export class UIManager {
         const activeWeapon = inventory.weapons[activeIndex];
         const count = activeWeapon?.count;
 
-        if (activeWeapon === undefined || count === undefined || UI_DEBUG_MODE) {
+        if (activeWeapon === undefined || count === undefined) {
             this.ui.ammoCounterContainer.hide();
         } else {
             this.ui.ammoCounterContainer.show();
@@ -930,6 +940,8 @@ export class UIManager {
             ), i++
         );
     }
+
+    private _ghillieFistImage: string | undefined;
 
     /*
       TODO proper caching would require keeping a copy of the inventory currently being shown,
@@ -1013,7 +1025,7 @@ export class UIManager {
                 const backgroundImage
                     = isFists
                         ? this.skinID !== undefined && Skins.fromStringSafe(this.skinID)?.grassTint
-                            ? `url("data:image/svg+xml,${encodeURIComponent(`<svg width="34" height="34" viewBox="0 0 8.996 8.996" xmlns="http://www.w3.org/2000/svg"><circle fill="${this.game.ghillieTint.toHex()}" stroke="${new Color(this.game.ghillieTint).multiply("#111").toHex()}" stroke-width="1.05833" cx="4.498" cy="4.498" r="3.969"/></svg>`)}")`
+                            ? this._ghillieFistImage ??= `url("data:image/svg+xml,${encodeURIComponent(`<svg width="34" height="34" viewBox="0 0 8.996 8.996" xmlns="http://www.w3.org/2000/svg"><circle fill="${this.game.colors.ghillie.toHex()}" stroke="${new Color(this.game.colors.ghillie).multiply("#111").toHex()}" stroke-width="1.05833" cx="4.498" cy="4.498" r="3.969"/></svg>`)}")`
                             : `url(./img/game/shared/skins/${this.skinID ?? this.game.console.getBuiltInCVar("cv_loadout_skin")}_fist.svg)`
                         : "none";
 
@@ -1168,7 +1180,10 @@ export class UIManager {
             }
         }
 
-        let killModalMessage = UIManager._killModalEventDescription[type][severity]($<HTMLSpanElement>(victimName).addClass("kill-msg-player-name")[0].outerHTML, weaponUsed !== undefined ? weaponUsed : "");
+        let killModalMessage = UIManager._killModalEventDescription[type][severity](
+            $<HTMLSpanElement>(victimName).addClass("kill-msg-player-name")[0].outerHTML,
+            weaponUsed ?? ""
+        );
 
         // special case for languages like hungarian and greek
         if (getTranslatedString("you") === "") {
@@ -1280,39 +1295,39 @@ export class UIManager {
 
     private static readonly _killModalEventDescription = freezeDeep<Record<KillfeedEventType, Record<KillfeedEventSeverity, (victim: string, weaponUsed: string) => string>>>({
         [KillfeedEventType.Suicide]: {
-            [KillfeedEventSeverity.Kill]: (_, weapon_) => getTranslatedString("km_message", {
+            [KillfeedEventSeverity.Kill]: (_, weapon) => getTranslatedString("km_message", {
                 you: getTranslatedString("you"),
                 finally: "",
                 event: getTranslatedString("kf_suicide_kill", { player: "" }),
                 victim: "",
-                with: weapon_ === "" ? "" : getTranslatedString("with"),
-                weapon: weapon_
+                with: weapon && getTranslatedString("with"),
+                weapon
             }),
-            [KillfeedEventSeverity.Down]: (_, weapon_) => getTranslatedString("km_message", {
+            [KillfeedEventSeverity.Down]: (_, weapon) => getTranslatedString("km_message", {
                 you: getTranslatedString("you"),
                 finally: "",
                 event: getTranslatedString("km_knocked"),
                 victim: getTranslatedString("yourself"),
-                with: weapon_ === "" ? "" : getTranslatedString("with"),
-                weapon: weapon_
+                with: weapon && getTranslatedString("with"),
+                weapon
             })
         },
         [KillfeedEventType.NormalTwoParty]: {
-            [KillfeedEventSeverity.Kill]: (name, weapon_) => getTranslatedString("km_message", {
+            [KillfeedEventSeverity.Kill]: (name, weapon) => getTranslatedString("km_message", {
                 you: getTranslatedString("you"),
                 finally: "",
                 event: getTranslatedString("km_killed"),
                 victim: name,
-                with: weapon_ === "" ? "" : getTranslatedString("with"),
-                weapon: weapon_
+                with: weapon && getTranslatedString("with"),
+                weapon
             }),
-            [KillfeedEventSeverity.Down]: (name, weapon_) => getTranslatedString("km_message", {
+            [KillfeedEventSeverity.Down]: (name, weapon) => getTranslatedString("km_message", {
                 you: getTranslatedString("you"),
                 finally: "",
                 event: getTranslatedString("km_knocked"),
                 victim: name,
-                with: weapon_ === "" ? "" : getTranslatedString("with"),
-                weapon: weapon_
+                with: weapon && getTranslatedString("with"),
+                weapon
             })
         },
         [KillfeedEventType.BleedOut]: {
@@ -1320,13 +1335,13 @@ export class UIManager {
             [KillfeedEventSeverity.Down]: name => getTranslatedString("kf_bleed_out_down", { player: name }) // should be impossible
         },
         [KillfeedEventType.FinishedOff]: {
-            [KillfeedEventSeverity.Kill]: (name, weapon_) => getTranslatedString("km_message", {
+            [KillfeedEventSeverity.Kill]: (name, weapon) => getTranslatedString("km_message", {
                 you: getTranslatedString("you"),
-                finally: getTranslatedString("finally"),
-                event: getTranslatedString("km_killed"),
+                finally: "",
+                event: getTranslatedString("kf_finished_off"),
                 victim: name,
-                with: weapon_ === "" ? "" : getTranslatedString("with"),
-                weapon: weapon_
+                with: weapon && getTranslatedString("with"),
+                weapon: weapon
             }),
             [KillfeedEventSeverity.Down]: name => `${name} was gently finished off` // should be impossible
         },
@@ -1418,7 +1433,6 @@ export class UIManager {
                             victimText = victimText.replace("<span>", "<span style=\"display:contents;\">");
                         }
 
-                        outer:
                         switch (eventType) {
                             case KillfeedEventType.FinallyKilled:
                                 switch (attackerId) {
@@ -1430,7 +1444,7 @@ export class UIManager {
                                         */
                                         killMessage = getTranslatedString("kf_finally_died", { player: victimText });
 
-                                        break outer;
+                                        break;
                                     case victimId:
                                         /*
                                             usually, a case where attacker and victim are the same would be
@@ -1441,16 +1455,16 @@ export class UIManager {
                                         */
                                         killMessage = getTranslatedString("kf_finally_ended_themselves", { player: victimText });
 
-                                        break outer;
+                                        break;
                                 }
-                                // fallthrough
+                                break;
                             case KillfeedEventType.NormalTwoParty:
                                 killMessage = getTranslatedString("kf_message", {
                                     player: attackerText,
                                     finally: "",
                                     event: getTranslatedString(`kf_${severity === KillfeedEventSeverity.Down ? "knocked" : "killed"}`),
                                     victim: victimText,
-                                    with: fullyQualifiedName === "" ? "" : getTranslatedString("with"),
+                                    with: fullyQualifiedName && getTranslatedString("with"),
                                     weapon: fullyQualifiedName
                                 });
                                 useSpecialSentence = true;
@@ -1461,7 +1475,7 @@ export class UIManager {
                                     finally: "",
                                     event: getTranslatedString("kf_finished_off"),
                                     victim: victimText,
-                                    with: fullyQualifiedName === "" ? "" : getTranslatedString("with"),
+                                    with: fullyQualifiedName && getTranslatedString("with"),
                                     weapon: fullyQualifiedName
                                 });
                                 useSpecialSentence = true;
@@ -1473,7 +1487,7 @@ export class UIManager {
                                     finally: "",
                                     event: getTranslatedString(`kf_suicide_${severity === KillfeedEventSeverity.Down ? "down" : "kill"}`, { player: "" }),
                                     victim: "",
-                                    with: fullyQualifiedName === "" ? "" : getTranslatedString("with"),
+                                    with: fullyQualifiedName && getTranslatedString("with"),
                                     weapon: fullyQualifiedName
                                 });
 

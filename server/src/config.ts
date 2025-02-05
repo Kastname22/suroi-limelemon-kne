@@ -15,7 +15,6 @@ export const Config = {
 
     maxPlayersPerGame: 80,
     maxGames: 5,
-    gameJoinTime: 60,
 
     gas: { mode: GasMode.Normal },
 
@@ -64,12 +63,12 @@ export type SpawnOptions =
     }
     | {
         readonly mode: SpawnMode.Radius
-        readonly position: [number, number, number?]
+        readonly position: readonly [x: number, y: number, z?: number]
         readonly radius: number
     }
     | {
         readonly mode: SpawnMode.Fixed
-        readonly position: [number, number, number?]
+        readonly position: readonly [x: number, y: number, z?: number]
     };
 
 export const enum GasMode {
@@ -112,7 +111,7 @@ export interface ConfigType {
         /**
         * The modes to switch between.
         */
-        readonly rotation: MapWithParams[]
+        readonly rotation: readonly MapWithParams[]
     }
 
     /**
@@ -141,7 +140,7 @@ export interface ConfigType {
         /**
          * The team sizes to switch between.
          */
-        readonly rotation: TeamSize[]
+        readonly rotation: readonly TeamSize[]
     }
 
     /**
@@ -158,11 +157,6 @@ export interface ConfigType {
      * The maximum number of concurrent games.
      */
     readonly maxGames: number
-
-    /**
-     * The number of seconds after which players are prevented from joining a game.
-     */
-    readonly gameJoinTime: number
 
     /**
      * There are 3 gas modes: GasMode.Normal, GasMode.Debug, and GasMode.Disabled.
@@ -187,7 +181,7 @@ export interface ConfigType {
     /**
      * List of plugin classes to load.
      */
-    readonly plugins: Array<new (game: Game) => GamePlugin>
+    readonly plugins: ReadonlyArray<new (game: Game) => GamePlugin>
 
     /**
      * Allows scopes and radios to work in buildings.

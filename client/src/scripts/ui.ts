@@ -289,6 +289,20 @@ export async function setUpUI(game: Game): Promise<void> {
     }
 
     if (UI_DEBUG_MODE) {
+        ui.inventoryMsg.show();
+        ui.inventoryMsg.text("Inventory message");
+
+        // Interaction and action stuff
+        ui.interactMsg.show();
+        ui.interactText.text("Interact");
+        ui.actionContainer.show();
+        ui.actionName.text("Action");
+        ui.actionTime.text("5.0");
+
+        // Team container
+        ui.teamContainer.show();
+        ui.teamContainer.html("<div class=\"teammate-container\"><svg class=\"teammate-health-indicator\" width=\"48\" height=\"48\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"21\" cy=\"24\" cx=\"24\" stroke-width=\"6\" stroke-dasharray=\"132\" fill=\"none\" style=\"transition: stroke-dashoffset 50ms ease-in-out; stroke: rgb(189, 199, 208); stroke-dashoffset: 0px;\"></circle></svg><div class=\"teammate-indicator-container\" style=\"background-color: rgb(0, 255, 255);\"><img class=\"teammate-indicator\" src=\"./img/game/shared/player/player_indicator.svg\"></div><span class=\"teammate-name\" style=\"color: rgb(0, 125, 128);\">pap_local_test23</span><img class=\"teammate-badge\" src=\"./img/game/shared/badges/bdg_developr.svg\"></div><div class=\"teammate-container\"><svg class=\"teammate-health-indicator\" width=\"48\" height=\"48\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"21\" cy=\"24\" cx=\"24\" stroke-width=\"6\" stroke-dasharray=\"132\" fill=\"none\" style=\"transition: stroke-dashoffset 50ms ease-in-out; stroke: rgb(189, 199, 208); stroke-dashoffset: 0px;\"></circle></svg><div class=\"teammate-indicator-container\" style=\"background-color: rgb(255, 0, 255);\"><img class=\"teammate-indicator\" src=\"./img/game/shared/player/player_indicator.svg\"></div><span class=\"teammate-name\" style=\"color: rgb(0, 125, 128);\">pap_local_test23</span><img class=\"teammate-badge\" src=\"./img/game/shared/badges/bdg_developr.svg\"></div><div class=\"teammate-container\"><svg class=\"teammate-health-indicator\" width=\"48\" height=\"48\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"21\" cy=\"24\" cx=\"24\" stroke-width=\"6\" stroke-dasharray=\"132\" fill=\"none\" style=\"transition: stroke-dashoffset 50ms ease-in-out; stroke: rgb(189, 199, 208); stroke-dashoffset: 0px;\"></circle></svg><div class=\"teammate-indicator-container\" style=\"background-color: rgb(255, 255, 0);\"><img class=\"teammate-indicator\" src=\"./img/game/shared/player/player_indicator.svg\"></div><span class=\"teammate-name\" style=\"color: rgb(0, 125, 128);\">pap_local_test23</span><img class=\"teammate-badge\" src=\"./img/game/shared/badges/bdg_developr.svg\"></div><div class=\"teammate-container\"><svg class=\"teammate-health-indicator\" width=\"48\" height=\"48\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"21\" cy=\"24\" cx=\"24\" stroke-width=\"6\" stroke-dasharray=\"132\" fill=\"none\" style=\"transition: stroke-dashoffset 50ms ease-in-out; stroke: rgb(189, 199, 208); stroke-dashoffset: 0px;\"></circle></svg><div class=\"teammate-indicator-container\" style=\"background-color: rgb(255, 128, 0);\"><img class=\"teammate-indicator\" src=\"./img/game/shared/player/player_indicator.svg\"></div><span class=\"teammate-name\" style=\"color: rgb(0, 125, 128);\">pap_local_test23</span><img class=\"teammate-badge\" src=\"./img/game/shared/badges/bdg_developr.svg\" style=\"\"></div>");
+
         // Kill message
         ui.killMsgHeader.text("Kills: 7");
         ui.killMsgContainer.text("Player  with Mosin-Nagant (streak: 255)");
@@ -755,8 +769,8 @@ export async function setUpUI(game: Game): Promise<void> {
             link: "https://www.youtube.com/@123op."
         },
         {
-            name: "bruh button official",
-            link: "https://www.youtube.com/@bruhbuttonofficial4658"
+            name: "$parkySKULL",
+            link: "https://www.youtube.com/@Skullboi249"
         },
         {
             name: "viper",
@@ -1627,6 +1641,19 @@ export async function setUpUI(game: Game): Promise<void> {
         element.checked = game.console.getBuiltInCVar("cv_weapon_slot_style") === "colored";
     }
 
+    const tmpCanvas = document.createElement("canvas");
+    let glContext = tmpCanvas.getContext("webgl2", { failIfMajorPerformanceCaveat: true });
+
+    if (!glContext) {
+        $("#splash-hw-acceleration-warning").show();
+    } else {
+        const loseContext = glContext.getExtension("WEBGL_lose_context");
+        if (loseContext) {
+            loseContext.loseContext();
+        }
+        glContext = null;
+    }
+
     // render mode select menu
     const renderSelect = $<HTMLSelectElement>("#render-mode-select")[0];
     renderSelect.addEventListener("input", () => {
@@ -2239,7 +2266,7 @@ export async function setUpUI(game: Game): Promise<void> {
 
         $("#mobile-options").show();
 
-        ui.menuButton.on("click", () => ui.gameMenu.toggle());
+        ui.menuButton.on("click", () => ui.gameMenu.fadeToggle(250));
 
         ui.emoteButton.on("click", () => {
             const { emoteWheelActive } = inputManager;

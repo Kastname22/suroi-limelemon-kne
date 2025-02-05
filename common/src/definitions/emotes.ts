@@ -32,12 +32,14 @@ export const Emotes = ObjectDefinitions.create<EmoteDefinition>("Emotes", [
         "Sobbing Face",
         "Angry Face",
         "Heart Face",
+        "Flushed Face",
         "Joyful Face",
         "Cool Face",
         "Upside Down Face",
         "Picasso Face",
         "Alien",
         "Headshot",
+        "Panned",
         "Dab",
         "Devil Face",
         "Bandaged Face",
@@ -50,6 +52,7 @@ export const Emotes = ObjectDefinitions.create<EmoteDefinition>("Emotes", [
         "Lying Face",
         "Nerd Face",
         "Skull",
+        "Blind Walking",
         "Melting Face",
         "Grimacing Face",
         "Vomiting Face",
@@ -58,6 +61,8 @@ export const Emotes = ObjectDefinitions.create<EmoteDefinition>("Emotes", [
         "Sad Smiling Face",
         "Triumphant Face",
         "Questioning Face",
+        "Shrugging Face",
+        "Facepalm",
         "Smirking Face",
         "Blushing Face",
         "Saluting Face",
@@ -66,9 +71,12 @@ export const Emotes = ObjectDefinitions.create<EmoteDefinition>("Emotes", [
         "Monocle Face",
         "Partying Face",
         "Shushing Face",
-        "Zipper Mouth Face",
         "Sighing Face",
-        "Frustrated Face"
+        "Yawning Face",
+        "Frustrated Face",
+        "Weary Face",
+        "Pensive Face",
+        "Zipper Mouth Face"
     ].map(name => emote([name, EmoteCategory.People])),
     ...[
         "Suroi Logo",
@@ -89,7 +97,8 @@ export const Emotes = ObjectDefinitions.create<EmoteDefinition>("Emotes", [
         "RIP",
         "Leosmug",
         "awhhmahgawd",
-        "Boykisser"
+        "Boykisser",
+        "Grr"
     ].map(name => emote([name, EmoteCategory.Memes])),
     ...[
         "Question Mark",
@@ -109,6 +118,7 @@ export const Emotes = ObjectDefinitions.create<EmoteDefinition>("Emotes", [
         "Egg",
         "Penguin",
         "Squid",
-        "Tomato"
+        "Tomato",
+        "Eagle"
     ].map(name => emote([name, EmoteCategory.Misc]))
 ]);

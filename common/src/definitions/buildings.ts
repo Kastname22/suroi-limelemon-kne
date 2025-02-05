@@ -36,6 +36,18 @@ interface SubBuilding {
     readonly layer?: number
 }
 
+export interface BuildingImageDefinition {
+    readonly key: string
+    readonly position: Vector
+    readonly rotation?: number
+    readonly scale?: Vector
+    readonly tint?: number | `#${string}`
+    readonly zIndex?: ZIndexes
+    readonly spinSpeed?: number
+    readonly spinOnSolve?: boolean
+    readonly residue?: string
+}
+
 export interface BuildingDefinition extends ObjectDefinition {
     readonly noCollisions?: boolean
     readonly noBulletCollision?: boolean
@@ -46,7 +58,7 @@ export interface BuildingDefinition extends ObjectDefinition {
     readonly ceilingCollapseParticleVariations?: number
     readonly resetCeilingResidueScale?: boolean
     readonly ceilingCollapseSound?: string
-    readonly destroyUponCeilingCollapse?: string[]
+    readonly destroyUponCeilingCollapse?: readonly string[]
     readonly material?: typeof Materials[number]
     readonly particle?: string
     readonly particleVariations?: number
@@ -60,6 +72,7 @@ export interface BuildingDefinition extends ObjectDefinition {
     readonly spawnMode: MapObjectSpawnMode
 
     readonly bridgeHitbox?: Hitbox
+    readonly bridgeMinRiverWidth?: number
 
     readonly ceilingScopeEffect: boolean
     readonly obstacles: readonly BuildingObstacle[]
@@ -90,26 +103,10 @@ export interface BuildingDefinition extends ObjectDefinition {
         readonly falloff: number
     }
 
-    readonly floorImages: ReadonlyArray<{
-        readonly key: string
-        readonly position: Vector
-        readonly rotation?: number
-        readonly scale?: Vector
-        readonly tint?: number | `#${string}`
-        readonly zIndex?: ZIndexes
-        readonly spinSpeed?: number
-        readonly spinOnSolve?: boolean
-    }>
+    readonly floorImages: readonly BuildingImageDefinition[]
     readonly floorZIndex: ZIndexes
 
-    readonly ceilingImages: ReadonlyArray<{
-        readonly key: string
-        readonly position: Vector
-        readonly rotation?: number
-        readonly scale?: Vector
-        readonly residue?: string
-        readonly tint?: number | `#${string}`
-    }>
+    readonly ceilingImages: readonly BuildingImageDefinition[]
     readonly ceilingZIndex: ZIndexes
     readonly ceilingHiddenAlpha?: number
 
@@ -211,6 +208,16 @@ const randomBarrel = {
 const randomToilet = {
     toilet: 1,
     used_toilet: 1
+};
+
+const randomStove = {
+    stove: 0.95,
+    pan_stove: 0.05
+};
+
+const randomSmallStove = {
+    small_stove: 0.95,
+    small_pan_stove: 0.05
 };
 
 const randomHayShed = {
@@ -579,12 +586,12 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 ceilingImages: [
                     {
                         key: upperCeilingImage,
-                        position: Vec.create(0, -6.94),
+                        position: Vec.create(0, -6.97),
                         tint
                     },
                     {
                         key: lowerCeilingImage,
-                        position: Vec.create(0, 6.94),
+                        position: Vec.create(-0.04, 6.97),
                         rotation: Math.PI,
                         tint
                     }
@@ -602,6 +609,66 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                         table: "ground_loot"
                     }]
             } as const;
+        });
+
+        const riverHut = derive((
+            id: number,
+            obstacles: BuildingObstacle[]
+        ) => {
+            const bridgeFloor1 = 31.5;
+            return {
+                idString: `river_hut_${id}`,
+                name: "River Hut",
+                wallsToDestroy: 3,
+                ceilingCollapseParticle: "river_hut_ceiling_particle",
+                spawnMode: MapObjectSpawnMode.Beach, // TODO: river bank spawn mode support
+                spawnHitbox: RectangleHitbox.fromRect(70, 70, Vec.create(8, 0)),
+                ceilingHitbox: RectangleHitbox.fromRect(32.5, 39.25), // RectangleHitbox.fromRect(30.6, 37),
+                floorImages: [
+                    {
+                        key: "river_hut_bridge_floor_1",
+                        position: Vec.create(20.15, -10.5)
+                    },
+                    {
+                        key: "river_hut_bridge_floor_2",
+                        position: Vec.create(bridgeFloor1, -5),
+                        scale: Vec.create(2, 2)
+                    },
+                    {
+                        key: "river_hut_floor",
+                        position: Vec.create(-2.6, 0),
+                        scale: Vec.create(2.14, 2.14)
+                    }
+                ],
+                ceilingImages: [{
+                    key: "river_hut_ceiling",
+                    position: Vec.create(0, 0),
+                    scale: Vec.create(2.1, 2.1),
+                    residue: "river_hut_residue"
+                }],
+                floors: [
+                    {
+                        type: FloorNames.Wood,
+                        hitbox: new GroupHitbox(
+                            RectangleHitbox.fromRect(32.5, 39.25),
+                            RectangleHitbox.fromRect(10, 13, Vec.create(20.4, -10.5)),
+                            RectangleHitbox.fromRect(13, 46, Vec.create(bridgeFloor1, -5))
+                        )
+                    },
+                    {
+                        type: FloorNames.Stone,
+                        hitbox: RectangleHitbox.fromRect(5.3, 11, Vec.create(-18.7, 12))
+                    }
+                ],
+                obstacles: [
+                    { idString: "door", position: Vec.create(-15.5, 12.18), rotation: 1 },
+                    { idString: "house_wall_20", position: Vec.create(0, -18.65), rotation: 0 },
+                    { idString: "house_wall_21", position: Vec.create(15.38, 8.12), rotation: 1 },
+                    { idString: "house_wall_22", position: Vec.create(-0.87, 18.68), rotation: 0 },
+                    { idString: "house_wall_23", position: Vec.create(-15.35, -5.09), rotation: 1 },
+                    ...obstacles
+                ]
+            };
         });
 
         const tent = derive((
@@ -988,27 +1055,15 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 ceilingHitbox: RectangleHitbox.fromRect(14, 18),
                 floorImages: [
                     {
-                        key: "porta_potty_floor_1",
-                        position: Vec.create(0, -3.8)
-                    },
-                    {
-                        key: "porta_potty_floor_2",
-                        position: Vec.create(0, 7)
+                        key: "porta_potty_floor",
+                        position: Vec.create(0, 1.5)
                     }
                 ],
                 ceilingImages: [
                     {
-                        key: "porta_potty_ceiling_2",
+                        key: "porta_potty_ceiling",
                         position: Vec.create(0, 0),
                         residue: "porta_potty_residue"
-                    },
-                    {
-                        key: "porta_potty_ceiling_1",
-                        position: Vec.create(0, -4.81)
-                    },
-                    {
-                        key: "porta_potty_ceiling_2",
-                        position: Vec.create(0, 4.825)
                     }
                 ],
                 wallsToDestroy: 2,
@@ -1813,7 +1868,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     },
                     // Kitchen Stove
                     {
-                        idString: "stove",
+                        idString: randomStove,
                         position: Vec.create(15.5, 24),
                         rotation: 2
                     },
@@ -1979,7 +2034,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     { idString: "house_wall_12", position: Vec.create(1, 19.85), rotation: 1 },
                     { idString: "potted_plant", position: Vec.create(-26, 5.55) },
                     { idString: "red_small_couch", position: Vec.create(-26.6, -3), rotation: 1 },
-                    { idString: "small_stove", position: Vec.create(-26.6, 14.9), rotation: 1 },
+                    { idString: randomSmallStove, position: Vec.create(-26.6, 14.9), rotation: 1 },
                     { idString: "fridge", position: Vec.create(-26.77, 23.1), rotation: 1 },
                     { idString: "sink", position: Vec.create(-4.5, 16.4), rotation: 3 },
                     { idString: "small_drawer", position: Vec.create(-4.3, 24.5), rotation: 3 },
@@ -2103,7 +2158,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     { idString: "chair", position: Vec.create(-21.87, 13.45), rotation: 3 },
                     { idString: "chair", position: Vec.create(-16.02, 8.25), rotation: 2 },
                     { idString: "fridge", position: Vec.create(-45.15, 21.66), rotation: 1 },
-                    { idString: "stove", position: Vec.create(-45.15, 12.3), rotation: 1 },
+                    { idString: randomStove, position: Vec.create(-45.15, 12.3), rotation: 1 },
                     { idString: "large_drawer", position: Vec.create(-45.12, 1.28), rotation: 1 },
                     { idString: "gun_mount_hp18", position: Vec.create(30.33, -2.98), rotation: 3, lootSpawnOffset: Vec.create(-4, 0) },
                     { idString: "bookshelf", position: Vec.create(-10.88, -22.62), rotation: 1 }
@@ -2248,7 +2303,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     { idString: "house_wall_6", position: Vec.create(7.5, -21.5), rotation: 1 },
                     { idString: "small_drawer", position: Vec.create(30.25, -25), rotation: 0 },
                     { idString: "fridge", position: Vec.create(21.5, -25.1), rotation: 0 },
-                    { idString: "small_stove", position: Vec.create(12.5, -25), rotation: 0 },
+                    { idString: randomSmallStove, position: Vec.create(12.5, -25), rotation: 0 },
                     //   { idString: "bookshelf", position: Vec.create(4.25, -22), rotation: 1 },
 
                     // bottom right (mini vault ig)
@@ -2495,24 +2550,15 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 ceilingHitbox: RectangleHitbox.fromRect(20, 27.5, Vec.create(-0.8, -1.5)),
                 floorImages: [
                     {
-                        key: "shed_floor_1",
-                        position: Vec.create(0, -8.3),
-                        scale: Vec.create(2, 2)
-                    },
-                    {
-                        key: "shed_floor_2",
-                        position: Vec.create(0, 8.1),
+                        key: "shed_floor",
+                        position: Vec.create(0, 0),
                         scale: Vec.create(2, 2)
                     }
                 ],
                 ceilingImages: [
                     {
-                        key: "shed_ceiling_1",
-                        position: Vec.create(-0.8, -9.025)
-                    },
-                    {
-                        key: "shed_ceiling_2",
-                        position: Vec.create(-0.8, 5.9)
+                        key: "shed_ceiling",
+                        position: Vec.create(-0.8, -1.6)
                     }
                 ],
                 floors: [
@@ -3639,7 +3685,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 obstacles: [
                     { idString: "door", position: Vec.create(2.7, -41.3), rotation: 2 },
                     { idString: "fridge", position: Vec.create(-19.8, -35.5), rotation: 1 },
-                    { idString: "stove", position: Vec.create(-19.8, -26.1), rotation: 1 },
+                    { idString: randomStove, position: Vec.create(-19.8, -26.1), rotation: 1 },
                     { idString: "bunk_bed", position: Vec.create(18, -31.25), rotation: 0 },
                     { idString: "small_drawer", position: Vec.create(18.4, -18.7), rotation: 0 },
                     { idString: "small_drawer", position: Vec.create(-2, -13.6), rotation: 1 },
@@ -4068,7 +4114,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 obstacles: [
                     { idString: "small_drawer", position: Vec.create(8.5, -5.5), rotation: 0 },
                     { idString: "sink", position: Vec.create(-16.8, -4.6), rotation: 1 },
-                    { idString: "small_stove", position: Vec.create(-16.8, 3.9), rotation: 1 },
+                    { idString: randomSmallStove, position: Vec.create(-16.8, 3.9), rotation: 1 },
                     { idString: "door", position: Vec.create(4.5, 8.45), rotation: 2 },
                     { idString: "mobile_home_wall_4", position: Vec.create(15.5, 8.45), rotation: 0 },
                     { idString: "mobile_home_wall_2", position: Vec.create(-10.5, 8.45), rotation: 0 },
@@ -4234,6 +4280,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     RectangleHitbox.fromRect(105, 45, Vec.create(0, 92.5)),
                     RectangleHitbox.fromRect(105, 45, Vec.create(0, -92.5))
                 ),
+                bridgeMinRiverWidth: 25,
                 floorImages: [
                     { key: "large_bridge_railing", position: Vec.create(23.3, -38) },
                     { key: "large_bridge_railing", position: Vec.create(23.3, 35.3), rotation: Math.PI, scale: Vec.create(-1, 1) },
@@ -4679,7 +4726,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     { idString: "headquarters_wall_3", position: Vec.create(33, -100.9), rotation: 1 },
                     { idString: "door", position: Vec.create(33, -91.7), rotation: 1 },
                     { idString: "sink", position: Vec.create(39, -101.25), rotation: 0 },
-                    { idString: "small_stove", position: Vec.create(47.5, -101.5), rotation: 0 },
+                    { idString: randomSmallStove, position: Vec.create(47.5, -101.5), rotation: 0 },
                     { idString: "fridge", position: Vec.create(55.7, -101.65), rotation: 0 },
                     { idString: "fridge", position: Vec.create(65, -101.65), rotation: 0 },
                     { idString: "door", position: Vec.create(64.225, -84), rotation: 2 },
@@ -4961,7 +5008,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 spawnHitbox: RectangleHitbox.fromRect(75, 75, Vec.create(0, 0)),
                 floorImages: [{
                     key: "small_bunker_entrance_floor",
-                    position: Vec.create(0, 0),
+                    position: Vec.create(-0.05, 0),
                     scale: Vec.create(2.2, 2.2)
                 }],
                 floors: [
@@ -5189,8 +5236,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     },
                     {
                         key: "barn_floor_explosion",
-                        position: Vec.create(-50, -37),
-                        scale: Vec.create(1, 1)
+                        position: Vec.create(-50, -37)
                     }
                 ],
                 ceilingImages: [{
@@ -5375,7 +5421,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                 }],
                 obstacles: [
                     { idString: "fridge", position: Vec.create(-19.8, -35.5), rotation: 1 },
-                    { idString: "stove", position: Vec.create(-19.8, -26.1), rotation: 1 },
+                    { idString: randomStove, position: Vec.create(-19.8, -26.1), rotation: 1 },
                     { idString: "bunk_bed", position: Vec.create(18, -31.25), rotation: 0 },
                     { idString: "small_drawer", position: Vec.create(18.4, -18.7), rotation: 0 },
                     { idString: "small_drawer", position: Vec.create(-2, -13.6), rotation: 1 },
@@ -6058,7 +6104,7 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     { idString: "kitchen_unit_3", position: Vec.create(-14.56, -55.59), rotation: 0 },
                     { idString: "kitchen_unit_2", position: Vec.create(-22.21, -56.1), rotation: 0 },
                     { idString: "fridge", position: Vec.create(-5.09, -55.81), rotation: 0 },
-                    { idString: "small_stove", position: Vec.create(-21.74, -42.92), rotation: 1 },
+                    { idString: randomSmallStove, position: Vec.create(-21.74, -42.92), rotation: 1 },
                     { idString: "large_table", position: Vec.create(6.81, -31.59), rotation: 0 },
                     { idString: "chair", position: Vec.create(6.92, -40.01), rotation: 2 },
                     { idString: "chair", position: Vec.create(13.81, -34.49), rotation: 1 },
@@ -6265,15 +6311,13 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                     hitbox: RectangleHitbox.fromRect(46.52, 55.74, Vec.create(13.43, 101.53))
                 }],
                 floorImages: [
-                    { key: "plumpkin_bunker_main_entrance_floor_1", position: Vec.create(13.43, 87.7) },
-                    { key: "plumpkin_bunker_main_entrance_floor_2", position: Vec.create(13.43, 115.3) },
+                    { key: "plumpkin_bunker_main_entrance_floor", position: Vec.create(13.43, 101.5) },
                     { key: "plumpkin_bunker_entrance_floor", position: Vec.create(146.55, -32.85), rotation: Math.PI },
                     { key: "plumpkin_bunker_entrance_floor", position: Vec.create(-145.11, -52.85), rotation: Math.PI / 2 }
                 ],
                 floorZIndex: ZIndexes.BuildingsFloor + 0.5,
                 ceilingImages: [
-                    { key: "plumpkin_bunker_main_entrance_ceiling_1", position: Vec.create(13.43, 87.7), scale: Vec.create(2, 2) },
-                    { key: "plumpkin_bunker_main_entrance_ceiling_2", position: Vec.create(13.43, 115.3), scale: Vec.create(2, 2) },
+                    { key: "plumpkin_bunker_main_entrance_ceiling", position: Vec.create(13.43, 101.5), scale: Vec.create(2, 2) },
                     { key: "plumpkin_bunker_entrance_ceiling", position: Vec.create(146.55, -32.85), rotation: Math.PI },
                     { key: "plumpkin_bunker_entrance_ceiling", position: Vec.create(-145.11, -52.85), rotation: Math.PI / 2 }
                 ],
@@ -6903,7 +6947,89 @@ export const Buildings = ObjectDefinitions.withDefault<BuildingDefinition>()(
                         }, position: Vec.create(30, -58), orientation: 1
                     }
                 ]
-            }
+            },
+
+            // Normal Mode Only
+            riverHut([1, [
+                { idString: "small_bed", position: Vec.create(-10.55, -9.38), rotation: 0 },
+                { idString: "small_drawer", position: Vec.create(-3.48, -13.6), rotation: 0 },
+                { idString: "small_table", position: Vec.create(9.54, 11.44), rotation: 0 },
+                { idString: "chair", position: Vec.create(5.1, 11.44), rotation: 3 },
+                { idString: "box", position: Vec.create(11.66, 0.14) },
+                { idString: "box", position: Vec.create(6.84, 2.69) },
+                { idString: "flint_crate", position: Vec.create(31.58, -22.6), outdoors: true },
+                { idString: "barrel", position: Vec.create(31.49, 11.78), outdoors: true }
+            ]]),
+
+            riverHut([2, [
+                { idString: "trash_bag", position: Vec.create(-19.99, -5.03), outdoors: true },
+                { idString: "barrel", position: Vec.create(-21.27, 2.62), outdoors: true },
+                { idString: "regular_crate", position: Vec.create(31.56, -21.66), outdoors: true },
+                { idString: "box", position: Vec.create(33.9, 9.33), outdoors: true },
+                { idString: "box", position: Vec.create(29.16, 13.99), outdoors: true },
+                { idString: "small_bed", position: Vec.create(-5.89, -13.83), rotation: 3 },
+                { idString: "box", position: Vec.create(-11.56, -5.55) },
+                { idString: "box", position: Vec.create(-6.56, -7.35) },
+                { idString: "small_table", position: Vec.create(9.86, 4.59), rotation: 0 },
+                { idString: "chair", position: Vec.create(5.72, 4.59), rotation: 3 },
+                { idString: "small_drawer", position: Vec.create(10.49, 14.3), rotation: 3 },
+                { idString: "trash_can", position: Vec.create(-10.86, 2.48) }
+            ]]),
+
+            riverHut([3, [
+                { idString: "small_bed", position: Vec.create(-10.55, -9.38), rotation: 0 },
+                { idString: "large_drawer", position: Vec.create(-0.26, -13.52), rotation: 0 },
+                { idString: "small_table", position: Vec.create(8.01, 13.4), rotation: 1 },
+                { idString: "chair", position: Vec.create(8.01, 9.7), rotation: 2 },
+                { idString: "trash_can", position: Vec.create(-1.69, 14.64) },
+                { idString: "potted_plant", position: Vec.create(-10.31, 3.33), rotation: 0 },
+                { idString: "barrel", position: Vec.create(-21.06, -2.26), outdoors: true },
+                { idString: "box", position: Vec.create(-19.46, 4.73), outdoors: true },
+                { idString: "grenade_box", position: Vec.create(28.14, 4.01), outdoors: true },
+                { idString: "super_barrel", position: Vec.create(31.58, -22.6), outdoors: true },
+                { idString: "regular_crate", position: Vec.create(31.49, 11.3), outdoors: true }
+            ]]),
+
+            // Fall Mode Only
+            riverHut([4, [
+                { idString: "small_bed", position: Vec.create(-10.55, -9.38), rotation: 0 },
+                { idString: "cooler", position: Vec.create(-1.83, -14.4), rotation: 0 },
+                { idString: "small_table", position: Vec.create(9.54, 11.44), rotation: 0 },
+                { idString: "chair", position: Vec.create(5.1, 11.44), rotation: 3 },
+                { idString: "small_drawer", position: Vec.create(10.11, 1.69), rotation: 3 },
+                { idString: "box", position: Vec.create(-2.92, -22.55), outdoors: true },
+                { idString: "propane_tank", position: Vec.create(1.77, -22.01), outdoors: true },
+                { idString: "box", position: Vec.create(7.39, 22.27), outdoors: true },
+                { idString: "box", position: Vec.create(2.62, 24.11), outdoors: true },
+                { idString: "barrel", position: Vec.create(-4.58, 24.41), outdoors: true },
+                { idString: "super_barrel", position: Vec.create(31.59, -22.89), outdoors: true }
+            ]]),
+
+            riverHut([5, [
+                { idString: "small_bed", position: Vec.create(-5.74, -13.61), rotation: 3 },
+                { idString: "cooler", position: Vec.create(-11.12, -4.91), rotation: 1 },
+                { idString: "small_table", position: Vec.create(9.76, 4.3), rotation: 0 },
+                { idString: "chair", position: Vec.create(5.64, 4.3), rotation: 3 },
+                { idString: "small_drawer", position: Vec.create(10.51, 14.23), rotation: 3 },
+                { idString: "barrel", position: Vec.create(-20.58, 0.31), outdoors: true },
+                { idString: "box", position: Vec.create(-19.47, -6.71), outdoors: true },
+                { idString: "box", position: Vec.create(-21, -12), outdoors: true },
+                { idString: "box", position: Vec.create(2.19, 22.4), outdoors: true },
+                { idString: "propane_tank", position: Vec.create(-2.64, 21.93), outdoors: true }
+            ]]),
+
+            riverHut([6, [
+                { idString: "small_bed", position: Vec.create(-10.55, -9.38), rotation: 0 },
+                { idString: "small_drawer", position: Vec.create(-3.48, -13.6), rotation: 0 },
+                { idString: "small_table", position: Vec.create(9.54, 11.44), rotation: 0 },
+                { idString: "chair", position: Vec.create(5.1, 11.44), rotation: 3 },
+                { idString: "cooler", position: Vec.create(9.4, 2.16), rotation: 2 },
+                { idString: "barrel", position: Vec.create(-5.16, -23.9), outdoors: true },
+                { idString: "box", position: Vec.create(1.49, -25.52), outdoors: true },
+                { idString: "box", position: Vec.create(6.31, -22.32), outdoors: true },
+                { idString: "box", position: Vec.create(-19.11, -1.56), outdoors: true },
+                { idString: "propane_tank", position: Vec.create(-18.6, 3.13), outdoors: true }
+            ]])
         ] satisfies ReadonlyArray<RawDefinition<Missing>>;
     }
 );

@@ -23,6 +23,7 @@ import { Vec, type Vector } from "@common/utils/vector";
 import { type WebSocket } from "uWebSockets.js";
 import { parentPort } from "worker_threads";
 
+import { Mode, ModeDefinition, Modes } from "@common/definitions/modes";
 import { ColorStyles, Logger, styleText } from "@common/utils/logging";
 import { Config, MapWithParams, SpawnMode } from "./config";
 import { MapName, Maps } from "./data/maps";
@@ -37,7 +38,6 @@ import { type Emote } from "./objects/emote";
 import { Explosion } from "./objects/explosion";
 import { type BaseGameObject, type GameObject } from "./objects/gameObject";
 import { Loot, type ItemData } from "./objects/loot";
-import { Obstacle } from "./objects/obstacle";
 import { Parachute } from "./objects/parachute";
 import { Player, type PlayerContainer } from "./objects/player";
 import { SyncedParticle } from "./objects/syncedParticle";
@@ -46,9 +46,8 @@ import { PluginManager } from "./pluginManager";
 import { Team } from "./team";
 import { Grid } from "./utils/grid";
 import { IDAllocator } from "./utils/idAllocator";
+import { Cache, getSpawnableLoots, SpawnableItemRegistry } from "./utils/lootHelpers";
 import { cleanUsername, modeFromMap, removeFrom } from "./utils/misc";
-import { Mode } from "fs";
-import { ModeDefinition, Modes } from "@common/definitions/modes";
 
 /*
     eslint-disable
@@ -76,10 +75,6 @@ export class Game implements GameData {
     updateObjects = false;
 
     readonly livingPlayers = new Set<Player>();
-    /**
-     * Players that have connected but haven't sent a JoinPacket yet
-     */
-    readonly connectingPlayers = new Set<Player>();
     readonly connectedPlayers = new Set<Player>();
     readonly spectatablePlayers: Player[] = [];
     /**
@@ -161,12 +156,17 @@ export class Game implements GameData {
         readonly direction: number
     }> = [];
 
-    readonly detectors: Obstacle[] = [];
-
     /**
      * All map pings this tick
      */
     readonly mapPings: PingSerialization[] = [];
+
+    private readonly _spawnableItemTypeCache = [] as Cache;
+
+    private _spawnableLoots: SpawnableItemRegistry | undefined;
+    get spawnableLoots(): SpawnableItemRegistry {
+        return this._spawnableLoots ??= getSpawnableLoots(this.modeName, this.map.mapDef, this._spawnableItemTypeCache);
+    }
 
     private readonly _timeouts = new Set<Timeout>();
 
@@ -236,8 +236,7 @@ export class Game implements GameData {
             startedTime: -1
         });
 
-        this.modeName = modeFromMap(map);
-        this.mode = (Modes as Record<Mode, ModeDefinition>)[this.modeName];
+        this.mode = Modes[this.modeName = modeFromMap(map)];
 
         this.pluginManager.loadPlugins();
 
@@ -370,20 +369,8 @@ export class Game implements GameData {
             explosion.explode();
         }
 
-        // Update detectors
-        for (const detector of this.detectors) {
-            detector.updateDetector();
-        }
-
         // Update gas
         this.gas.tick();
-
-        // Delete players that haven't sent a JoinPacket after 5 seconds
-        for (const player of this.connectingPlayers) {
-            if (this.now - player.joinTime > 5000) {
-                player.disconnect("JoinPacket not received after 5 seconds");
-            }
-        }
 
         // First loop over players: movement, animations, & actions
         for (const player of this.grid.pool.getCategory(ObjectCategory.Player)) {
@@ -461,7 +448,7 @@ export class Game implements GameData {
         }
 
         if (this.aliveCount >= Config.maxPlayersPerGame) {
-            this.createNewGame();
+            this.preventJoin();
         }
 
         // Record performance and start the next tick
@@ -496,11 +483,10 @@ export class Game implements GameData {
         parentPort?.postMessage({ type: WorkerMessages.UpdateGameData, data } satisfies WorkerMessage);
     }
 
-    createNewGame(): void {
-        if (!this.allowJoin) return; // means a new game has already been created by this game
+    preventJoin(): void {
+        if (!this.allowJoin) return;
 
-        parentPort?.postMessage({ type: WorkerMessages.CreateNewGame });
-        this.log("Attempting to create new game");
+        this.log("Preventing new players from joining");
         this.setGameData({ allowJoin: false });
     }
 
@@ -695,13 +681,13 @@ export class Game implements GameData {
 
         // Player is added to the players array when a JoinPacket is received from the client
         const player = new Player(this, socket, spawnPosition, spawnLayer, team);
-        this.connectingPlayers.add(player);
         this.pluginManager.emit("player_did_connect", player);
         return player;
     }
 
     // Called when a JoinPacket is sent by the client
     activatePlayer(player: Player, packet: JoinPacketData): void {
+        if (player.joined) return;
         const rejectedBy = this.pluginManager.emit("player_will_join", { player, joinPacket: packet });
         if (rejectedBy) {
             player.disconnect(`Connection rejected by server plugin '${rejectedBy.constructor.name}'`);
@@ -733,7 +719,6 @@ export class Game implements GameData {
 
         this.livingPlayers.add(player);
         this.spectatablePlayers.push(player);
-        this.connectingPlayers.delete(player);
         this.connectedPlayers.add(player);
         this.newPlayers.push(player);
         this.grid.addObject(player);
@@ -767,8 +752,6 @@ export class Game implements GameData {
                 this._started = true;
                 this.setGameData({ startedTime: this.now });
                 this.gas.advanceGasStage();
-
-                this.addTimeout(this.createNewGame.bind(this), Config.gameJoinTime * 1000);
             }, 3000);
         }
 
@@ -802,7 +785,6 @@ export class Game implements GameData {
 
         player.disconnected = true;
         this.aliveCountDirty = true;
-        this.connectingPlayers.delete(player);
         this.connectedPlayers.delete(player);
 
         if (player.canDespawn) {

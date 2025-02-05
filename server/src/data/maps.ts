@@ -1,4 +1,4 @@
-import { Layer } from "@common/constants";
+import { GameConstants, Layer } from "@common/constants";
 import { Buildings, type BuildingDefinition } from "@common/definitions/buildings";
 import { Guns } from "@common/definitions/guns";
 import { Loots } from "@common/definitions/loots";
@@ -16,7 +16,11 @@ import { SpawnMode, SpawnOptions } from "../config";
 import { type GunItem } from "../inventory/gunItem";
 import { GameMap } from "../map";
 import { Player, type PlayerContainer } from "../objects/player";
-import { getLootFromTable, LootTables } from "./lootTables";
+import { GamePlugin } from "../pluginManager";
+import { LootTables } from "./lootTables";
+import { getLootFromTable } from "../utils/lootHelpers";
+import { Backpacks } from "@common/definitions/backpacks";
+import { Armors } from "@common/definitions/armors";
 
 export interface RiverDefinition {
     readonly minAmount: number
@@ -29,13 +33,15 @@ export interface RiverDefinition {
     readonly maxWideWidth: number
     /**
      * The number is the amount of the specified obstacle each river will have
+     *
      * Multiplied by the river width and amount of nodes and divided by a magic number (500)
      * (division done so the numbers here don't need to be too small / decimals)
-     * so its kinda of a "density" of obstacles inside a river
-     * a better way would be to calculate the polygon area of the river
+     *
+     * so its kinda of a "density" of obstacles inside a river\
+     * a better way would be to calculate the polygon area of the river\
      * but that's slower and we don't need to be that accurate
      *
-     * NOTE: obstacles in this object still need `River` or `Trail` spawn mode
+     * **NOTE**: obstacles in this object still need `River` or `Trail` spawn mode
      * for river obstacles that have a fixed amount per game (like river chests)
      * you should use `MapDefinition.obstacles`
      */
@@ -57,8 +63,12 @@ export interface MapDefinition {
         readonly maxWidth: number
         readonly maxHeight: number
         readonly count: number
-        readonly allowedObstacles: Array<ReferenceTo<ObstacleDefinition>>
-        readonly obstacles: Array<{ idString: ReferenceTo<ObstacleDefinition>, min: number, max: number }>
+        readonly allowedObstacles: ReadonlyArray<ReferenceTo<ObstacleDefinition>>
+        readonly obstacles: ReadonlyArray<{
+            readonly idString: ReferenceTo<ObstacleDefinition>
+            readonly min: number
+            readonly max: number
+        }>
     }
 
     readonly bridges?: ReadonlyArray<ReferenceTo<BuildingDefinition>>
@@ -121,6 +131,9 @@ const maps = {
             large_bridge: 2,
             small_bridge: Infinity,
             port_complex: 1,
+            river_hut_1: 2,
+            river_hut_2: 2,
+            river_hut_3: 2,
             sea_traffic_control: 1,
             tugboat_red: 1,
             tugboat_white: 5,
@@ -149,6 +162,9 @@ const maps = {
         },
         majorBuildings: ["armory", "refinery", "port_complex", "headquarters"],
         quadBuildingLimit: {
+            river_hut_1: 1,
+            river_hut_2: 1,
+            river_hut_3: 1,
             red_house: 1,
             red_house_v2: 1,
             warehouse: 2,
@@ -275,6 +291,9 @@ const maps = {
             ]
         },
         buildings: {
+            river_hut_4: 3,
+            river_hut_5: 3,
+            river_hut_6: 3,
             small_bridge: Infinity,
             plumpkin_bunker: 1,
             sea_traffic_control: 1,
@@ -303,6 +322,9 @@ const maps = {
         },
         majorBuildings: ["bombed_armory", "lodge", "plumpkin_bunker"],
         quadBuildingLimit: {
+            river_hut_4: 2,
+            river_hut_5: 2,
+            river_hut_6: 2,
             barn: 1,
             outhouse: 3,
             red_house: 1,
@@ -906,30 +928,78 @@ const maps = {
         const Guns = Loots.byType(ItemType.Gun);
 
         return {
-            width: 64,
-            height: 48 + (16 * Guns.length),
-            beachSize: 8,
-            oceanSize: 8,
+            width: 64 * 8,
+            height: 48 + (6 * Guns.length),
+            beachSize: 0,
+            oceanSize: 0,
             onGenerate(map) {
-                for (let i = 0, l = Guns.length; i < l; i++) {
-                    const player = new Player(
-                        map.game,
-                        { getUserData: () => { return {}; } } as unknown as WebSocket<PlayerContainer>,
-                        Vec.create(32, 32 + (16 * i))
-                    );
-                    const gun = Guns[i];
+                const game = map.game;
 
-                    player.inventory.addOrReplaceWeapon(0, gun.idString);
-                    (player.inventory.getWeapon(0) as GunItem).ammo = gun.capacity;
-                    player.inventory.items.setItem(gun.ammoType, Infinity);
-                    player.disableInvulnerability();
-                    // setInterval(() => player.activeItem.useItem(), 30);
-                    map.game.addLoot(gun.idString, Vec.create(16, 32 + (16 * i)), 0);
-                    map.game.addLoot(gun.ammoType, Vec.create(16, 32 + (16 * i)), 0, { count: Infinity });
-                    map.game.grid.addObject(player);
-                }
+                game.pluginManager.loadPlugin(
+                    class extends GamePlugin {
+                        protected initListeners(): void {
+                            this.on("game_created", _game => {
+                                if (_game !== game) return;
+                                const createBot = (name: string): Player | undefined => {
+                                    const bot = game.addPlayer({
+                                        send(): number { return 0; },
+                                        getBufferedAmount(): number { return 0; },
+                                        end(): void { return; },
+                                        close(): void { return; },
+                                        ping(): number { return 0; },
+                                        subscribe(): boolean { return false; },
+                                        unsubscribe(): boolean { return false; },
+                                        isSubscribed(): boolean { return false; },
+                                        getTopics(): string[] { return []; },
+                                        publish(): boolean { return true; },
+                                        cork(): WebSocket<PlayerContainer> { return this; },
+                                        getRemoteAddress(): ArrayBuffer { return new ArrayBuffer(); },
+                                        getRemoteAddressAsText(): ArrayBuffer { return new ArrayBuffer(); },
+                                        getUserData(): PlayerContainer { return { isDev: false, autoFill: false, ip: undefined, lobbyClearing: false, weaponPreset: "" }; }
+                                    });
+
+                                    if (bot !== undefined) {
+                                        game.activatePlayer(
+                                            bot,
+                                            {
+                                                name,
+                                                isMobile: false,
+                                                skin: Loots.fromString("hazel_jumpsuit"),
+                                                emotes: Array.from({ length: 6 }, () => undefined),
+                                                protocolVersion: GameConstants.protocolVersion
+                                            }
+                                        );
+                                    }
+
+                                    return bot;
+                                };
+
+                                const teleportPlayer = (player: Player, position: Vector): void => {
+                                    player.position = position;
+                                    player.updateObjects = true;
+                                    player.game.grid.updateObject(player);
+                                    player.setDirty();
+                                };
+
+                                for (let i = 0, l = Guns.length; i < l; i++) {
+                                    const player = createBot(`bot ${i}`);
+                                    if (player === undefined) return;
+                                    teleportPlayer(player, Vec.create(256, 24 + 6 * i));
+                                    const gun = Guns[i];
+
+                                    player.inventory.addOrReplaceWeapon(0, gun.idString);
+                                    (player.inventory.getWeapon(0) as GunItem).ammo = gun.capacity;
+                                    player.inventory.items.setItem(gun.ammoType, Infinity);
+                                    player.disableInvulnerability();
+                                    // map.game.addLoot(gun.idString, Vec.create(16, 32 + 16 * i), 0);
+                                    // map.game.addLoot(gun.ammoType, Vec.create(16, 32 + 16 * i), 0, { count: Infinity });
+                                }
+                            });
+                        }
+                    }
+                );
             }
-        };
+        } satisfies MapDefinition;
     })(),
     obstaclesTest: {
         width: 128,
@@ -969,11 +1039,13 @@ const maps = {
         oceanSize: 16,
         onGenerate(map) {
             const { game } = map;
-            const pos = Vec.create(128, 128);
-            game.addLoot(Loots.fromString("gauze"), pos, 0);
-            game.addLoot(Loots.fromString("medikit"), pos, 0);
-            game.addLoot(Loots.fromString("cola"), pos, 0);
-            game.addLoot(Loots.fromString("tablets"), pos, 0);
+            let x = 88;
+            [
+                ...Armors.definitions,
+                ...Backpacks.definitions
+            ].map(({ idString }) => idString).filter(idString => idString !== "bag" && idString !== "developr_vest").forEach(loot => {
+                game.addLoot(Loots.fromString(loot), Vec.create(x = x + 8, 120), 0, { pushVel: 0, jitterSpawn: false });
+            });
         }
     },
     river: {
@@ -1154,7 +1226,7 @@ const maps = {
 
             Object.entries(loots ?? {}).forEach(([lootTable, count]) => {
                 for (let i = 0; i < count; i++) {
-                    const loot = getLootFromTable(lootTable);
+                    const loot = getLootFromTable("normal", lootTable);
 
                     const position = map.getRandomPosition(
                         new CircleHitbox(5),
